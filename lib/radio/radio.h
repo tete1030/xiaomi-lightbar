@@ -1,10 +1,13 @@
 #ifndef RADIO_H
 #define RADIO_H
 
-void setupRadioScanner();
-void updateRadioScanner();
+void resetRadioState();
+int prettyPrintDetails(char* details, size_t size);
 
-void setupRadioTransmitter();
-void sendCommand();
+int setupRadioScanner(uint8_t channel, uint8_t pa_level);
+int updateRadioScanner();
+
+int setupRadioTransmitter(uint8_t channel, uint8_t pa_level);
+int sendCustomCommand(uint32_t remote_id, byte command_id, byte command_arg);
 
 #endif

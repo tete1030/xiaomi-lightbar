@@ -1,1 +1,7 @@
-{}
+{
+    "files.associations": {
+        "*.json": "jsonc",
+        "Dockerfile-*": "dockerfile",
+        "new": "cpp"
+    }
+}
