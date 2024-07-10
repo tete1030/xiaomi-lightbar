@@ -41,7 +41,7 @@ void resetRadioState()
 
 #define PANIC() \
 	do { \
-		error("Panic"); \
+		error(F("Panic")); \
 		while(1); \
 	} while(0)
 
@@ -49,7 +49,7 @@ void resetRadioState()
 #define CHECK_RADIO() \
 	do { \
 		if (!radio.isValid()) { \
-			error("Radio not valid"); \
+			error(F("Radio not valid")); \
 			return -1; \
 		} \
 	} while(0)
@@ -57,12 +57,12 @@ void resetRadioState()
 #define CHECK_RADIO_INIT() \
 	do { \
 		if (!radioInitialised) { \
-			error("Radio not initialised"); \
+			error(F("Radio not initialised")); \
 			return -1; \
 		} \
 		CHECK_RADIO(); \
 		if (!radio.isChipConnected()) { \
-			error("Radio not connected"); \
+			error(F("Radio not connected")); \
 			return -1; \
 		} \
 	} while(0)
@@ -71,7 +71,7 @@ void resetRadioState()
 	do { \
 		CHECK_RADIO_INIT(); \
 		if (!radioScannerMode) { \
-			error("Radio not in scanner mode"); \
+			error(F("Radio not in scanner mode")); \
 			return -1; \
 		} \
 	} while(0)
@@ -80,7 +80,7 @@ void resetRadioState()
 	do { \
 		CHECK_RADIO_INIT(); \
 		if (radioScannerMode) { \
-			error("Radio not in transmitter mode"); \
+			error(F("Radio not in transmitter mode")); \
 			return -1; \
 		} \
 	} while(0)
@@ -112,32 +112,28 @@ uint8_t getPALevel(uint8_t pa_level)
 		default:
 			// print with sprintf
 			char error_msg[50];
-			sprintf(error_msg, "Invalid PA level: %d", pa_level);
+			sprintf_P(error_msg, PSTR("Invalid PA level: %d"), pa_level);
 			error(error_msg);
 			PANIC();
 			return RF24_PA_LOW;
 	}
 }
 
-// int prettyPrintDetails(char* details, size_t size)
-// {
-// 	CHECK_RADIO();
-// 	radio.sprintfPrettyDetails(prettyDetails);
-// 	if (strlen(prettyDetails) > size)
-// 	{
-// 		error("Details too long");
-// 		return -1;
-// 	}
-// 	strcpy(details, prettyDetails);
-// 	return 0;
-// }
+int printRadioDetails()
+{
+	CHECK_RADIO();
+	Serial.println(F("begin_radio_detail"));
+	radio.printPrettyDetails();
+	Serial.println(F("end_radio_detail"));
+	return 0;
+}
 
 int setupRadioScanner(uint8_t channel, uint8_t pa_level)
 {
 	CHECK_RADIO();
 	if (!radioInitialised && !radio.begin())
 	{
-		error("Radio failed to initialise");
+		error(F("Radio failed to initialise"));
 		PANIC();
 	}
 	radio.openReadingPipe(0, RECEIVE_ADDRESS);
@@ -183,9 +179,9 @@ int updateRadioScanner()
 		if (data[0] == 0x1C && data[1] == 0x49 &&
 			data[2] == 0x34 && data[3] == 0x12) // Capture all events from the remote
 		{
-			debugLogln("=========================");
-			debugLogln("Light Bar Packet received");
-			debugLogln("=========================");
+			debugLogln(F("========================="));
+			debugLogln(F("Light Bar Packet received"));
+			debugLogln(F("========================="));
 
 			uint32_t remote_id = 0;
 			uint8_t sequence = 0;
@@ -203,40 +199,40 @@ int updateRadioScanner()
 			for (unsigned long i = 4; i < sizeof(data); i++)
 			{
 				if (i == 4)
-					debugLogln("------ Remote ID");
+					debugLogln(F("------ Remote ID"));
 				if (i == 7)
-					debugLogln("------ Sep");
+					debugLogln(F("------ Sep"));
 				if (i == 8)
-					debugLogln("------ Sequence");
+					debugLogln(F("------ Sequence"));
 				if (i == 9)
-					debugLog("------ Command ID");
+					debugLog(F("------ Command ID"));
 				if (i == 11)
-					debugLogln("------ CRC16");
+					debugLogln(F("------ CRC16"));
 				if (i == 9) {
 					switch (data[i]) {
 						case 0x01:
-							debugLog(" | on/off");
+							debugLog(F(" | on/off"));
 							break;
 						case 0x02:
-							debugLog(" | temperature - ");
+							debugLog(F(" | temperature - "));
 							break;
 						case 0x03:
-							debugLog(" | temperature + ");
+							debugLog(F(" | temperature + "));
 							break;
 						case 0x04:
-							debugLog(" | brightness +");
+							debugLog(F(" | brightness +"));
 							break;
 						case 0x05:
-							debugLog(" | brightness -");
+							debugLog(F(" | brightness -"));
 							break;
 						default:
-							debugLog(" | Unknown command");
+							debugLog(F(" | Unknown command"));
 							break;
 					}
 					debugLogln();
 				}
 				debugLog(i, DEC);
-				debugLog(": 0x");
+				debugLog(F(": 0x"));
 				debugLog(data[i], HEX);
 				debugLogln();
 			}
@@ -253,34 +249,35 @@ int updateRadioScanner()
 			}
 			uint16_t crc_result = crc16(crc_data, (uint8_t)sizeof(crc_data));
 			if (crc_result == (((uint16_t)data[11]) << 8 | (uint16_t)data[12])) {
-				debugLogln("CRC16 matches");
+				debugLogln(F("CRC16 matches"));
 				char outputResult[100];
 				// sprintf(outputResult, "Remote ID: 0x%08X, Sequence: 0x%02X, Command ID: 0x%02X, Command Arg: 0x%02X", remote_id, sequence, command_id, command_arg);
-				sprintf(outputResult, "remote_id=0x%08X,sequence=0x%02X,command_id=0x%02X,command_arg=0x%02X", (unsigned int)remote_id, sequence, command_id, command_arg);
+				sprintf_P(outputResult, PSTR("remote_id=0x%08X,sequence=0x%02X,command_id=0x%02X,command_arg=0x%02X"), (unsigned int)remote_id, sequence, command_id, command_arg);
+
 				output(outputResult);
 			} else {
-				debugLogln("CRC16 does not match");
+				debugLogln(F("CRC16 does not match"));
 			}
 
-			debugLogln("=========================");
+			debugLogln(F("========================="));
 			debugLogln();
 		} else {
 			#if DEBUG_LOG
 			// Dump
-			debugLogln("Packet received, unknown:");
+			debugLogln(F("Packet received, unknown:"));
 			for (unsigned long i = 0; i < sizeof(data); i++)
 			{
-				debugLog("0x");
+				debugLog(F("0x"));
 				if (data[i] < 0x10)
-					debugLog("0");
+					debugLog(F("0"));
 				debugLog(data[i], HEX);
-				debugLog(" ");
+				debugLog(F(" "));
 			}
 			debugLogln();
 			#endif
 		}
 	} else {
-		// debugLogln("No packet received");
+		// debugLogln(F("No packet received"));
 	}
 	return 0;
 };
@@ -290,45 +287,45 @@ int updateRadioScanner()
 int setupRadioTransmitter(uint8_t channel, uint8_t pa_level)
 {
 	CHECK_RADIO();
-	debugLogln(PSTR("Setup radio transmitter"));
+	debugLogln(F("Setup radio transmitter"));
 	if (!radioInitialised && !radio.begin())
 	{
-		error("Radio failed to initialise");
+		error(F("Radio failed to initialise"));
 		PANIC();
 	}
 	// radio.openReadingPipe(0, SEND_ADDRESS);
 	if (radioScannerMode)
 	{
-		debugLogln("Stop listening...");
+		debugLogln(F("Stop listening..."));
 		radio.stopListening();
 	}
 
-	debugLogln("Set to channel...");
+	debugLogln(F("Set to channel..."));
 	radio.setChannel(channel);
 
-	debugLogln("Set data rate to 2MBPS...");
+	debugLogln(F("Set data rate to 2MBPS..."));
 	radio.setDataRate(RF24_2MBPS);
 
-	debugLogln("Disable CRC...");
+	debugLogln(F("Disable CRC..."));
 	radio.disableCRC();
 
-	debugLogln("Disable dynamic payloads...");
+	debugLogln(F("Disable dynamic payloads..."));
 	radio.disableDynamicPayloads();
 
-	debugLogln("Disable auto-ACK...");
+	debugLogln(F("Disable auto-ACK..."));
 	radio.setAutoAck(false);
 
-	debugLogln("Set PA Level...");
+	debugLogln(F("Set PA Level..."));
 	uint8_t real_pa_level = getPALevel(pa_level);
 	radio.setPALevel(real_pa_level);
 
-	debugLogln("Set payload size");
+	debugLogln(F("Set payload size"));
 	radio.setPayloadSize(PACKET_SIZE);
 
-	debugLogln("Set retries");
+	debugLogln(F("Set retries"));
 	radio.setRetries(0, 0);
 
-	debugLogln("Open writing pipe");
+	debugLogln(F("Open writing pipe"));
 	radio.openWritingPipe(SEND_ADDRESS); // always uses pipe 0
 
 	#if DEBUG_LOG
@@ -369,7 +366,7 @@ int sendCustomCommand(uint32_t remote_id, byte command_id, byte command_arg) {
 	for (int i = 0; i < SEND_ATTEMPTS; i++)
 	{
 		if (!radio.write(&data, sizeof(data), true)) {
-			error("Write fail");
+			error(F("Write fail"));
 		}
 		delay(20);
 	}

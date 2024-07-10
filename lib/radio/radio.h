@@ -2,7 +2,7 @@
 #define RADIO_H
 
 void resetRadioState();
-int prettyPrintDetails(char* details, size_t size);
+int printRadioDetails();
 
 int setupRadioScanner(uint8_t channel, uint8_t pa_level);
 int updateRadioScanner();

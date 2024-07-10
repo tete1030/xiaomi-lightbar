@@ -1,13 +1,13 @@
 #include <Arduino.h>
 #include <radio.h>
 #include <printf.h>
-#include "log.h"
 #include <avr/wdt.h>
 
 uint8_t gChannel = 6;
 uint8_t gPaLevel = 1;
 
-#define DEBUG_MODE 1
+#include "config.h"
+#include "log.h"
 
 void setup()
 {
@@ -26,16 +26,15 @@ void setup()
 	wdt_enable(WDTO_8S);
 
 	Serial.println();
-	output("setup");
+	output(F("setup"));
 }
 
 void (* resetFunc) (void) = 0;
 
-#define TIMEOUT_MS 5
 int readLine(char* buffer, uint32_t bufferSize)
 {
 	if (bufferSize == 0) {
-		error("Buffer size is 0");
+		error(F("Buffer size is 0"));
 		return -1;
 	}
 	uint32_t readCounter = 0;
@@ -46,14 +45,14 @@ int readLine(char* buffer, uint32_t bufferSize)
 	while (true)
 	{
 		if (readCounter + 1 >= bufferSize) {
-			error("Buffer overflow");
+			error(F("Buffer overflow"));
 			return -1;
 		}
 		while (Serial.available() == 0) {
 			wdt_reset();
-			#if DEBUG_MODE == 0
-			if (readCounter >= 1 && millis() - startTime > TIMEOUT_MS) {
-				error("Line Timeout");
+			#if MANUAL_MODE == 0
+			if (readCounter >= 1 && millis() - startTime > INPUT_TIMEOUT_MS) {
+				error(F("Line Timeout"));
 				return -1;
 			}
 			#endif
@@ -63,14 +62,15 @@ int readLine(char* buffer, uint32_t bufferSize)
 			startTime = millis();
 		}
 
-		#if DEBUG_MODE == 1
+		#if MANUAL_MODE == 1
 		Serial.print(readByte);
 		// if backspace
 		if (readByte == 0x08) {
-			Serial.print(" ");
+			Serial.print(F(" "));
 			Serial.print(readByte);
 		}
 		#endif
+
 		if (readByte == '\r') continue;
 		if (readByte == '\n') break;
 
@@ -89,7 +89,7 @@ int readLine(char* buffer, uint32_t bufferSize)
 int parseUntil(const char* source, int32_t sourceLen, char* target, uint16_t targetBufSize, const char* delimiters)
 {
 	if (sourceLen < 0) {
-		error("Invalid source length");
+		error(F("Invalid source length"));
 		return -1;
 	}
 	uint16_t index = 0;
@@ -112,7 +112,7 @@ int parseUntil(const char* source, int32_t sourceLen, char* target, uint16_t tar
 		if (foundDelimiter) break;
 
 		if (target != NULL && index >= targetBufSize - 1) {
-			error("Buffer overflow");
+			error(F("Buffer overflow"));
 			return -1;
 		}
 
@@ -126,7 +126,7 @@ int parseUntil(const char* source, int32_t sourceLen, char* target, uint16_t tar
 		if (index < targetBufSize) {
 			target[index] = '\0';
 		} else {
-			error("Buffer overflow");
+			error(F("Buffer overflow"));
 			return -1;
 		}
 	}
@@ -143,27 +143,27 @@ int receiveCmd(char* buffer, uint16_t bufferSize, char** outCmd, uint16_t* outCm
 
 	if (readSize < 3 || buffer[0] != 'i' || buffer[1] != 'n' || buffer[2] != ',')
 	{
-		error("Invalid command format");
+		error(F("Invalid command format"));
 		return -1;
 	}
 	
 	char* bufPtr = buffer + 3;
 	int32_t remainSize = readSize - 3;
 	if (remainSize <= 0) {
-		error("No command");
+		error(F("No command"));
 		return -1;
 	}
 
 	int cmdSize = parseUntil(bufPtr, remainSize, NULL, 0, ",\r\n");
 	if (cmdSize <= 0) {
-		error("No command");
+		error(F("No command"));
 		return -1;
 	}
 	*outCmd = bufPtr;
 	*outCmdSize = cmdSize;
 
 	#if DEBUG_LOG
-	debugLog("Received command: ");
+	debugLog(F("Received command: "));
 	for (int i = 0; i < cmdSize; i++)
 	{
 		debugLog(*(*outCmd + i));
@@ -180,7 +180,7 @@ int receiveCmd(char* buffer, uint16_t bufferSize, char** outCmd, uint16_t* outCm
 	}
 	int argsSize = parseUntil(bufPtr, remainSize, NULL, 0, "\r\n");
 	if (argsSize < 0) {
-		error("Arg parsing error");
+		error(F("Arg parsing error"));
 		return -1;
 	}
 	*outArgs = bufPtr;
@@ -197,43 +197,43 @@ int parseSendCmdArgs(const char* args, const uint16_t argsSize, uint32_t* remote
 
 	uint32_t remoteIdSize = parseUntil(argPtr, remainSize, bufStr, sizeof(bufStr), ",");
 	if (remoteIdSize != 8) {
-		error("Invalid remote id size");
+		error(F("Invalid remote id size"));
 		return -1;
 	}
 	if (bufStr[0] != '0' || bufStr[1] != 'x') {
-		error("Invalid remote id format");
+		error(F("Invalid remote id format"));
 		return -1;
 	}
 	*remoteId = strtoul(bufStr+2, NULL, 16);
 	argPtr += remoteIdSize + 1;
 	remainSize -= remoteIdSize + 1;
 	if (remainSize <= 0) {
-		error("No command id");
+		error(F("No command id"));
 		return -1;
 	}
 	uint32_t commandIdSize = parseUntil(argPtr, remainSize, bufStr, sizeof(bufStr), ",");
 	if (commandIdSize != 4) {
-		error("Invalid command id size");
+		error(F("Invalid command id size"));
 		return -1;
 	}
 	if (bufStr[0] != '0' || bufStr[1] != 'x') {
-		error("Invalid command id format");
+		error(F("Invalid command id format"));
 		return -1;
 	}
 	*commandId = (byte)strtoul(bufStr+2, NULL, 16);
 	argPtr += commandIdSize + 1;
 	remainSize -= commandIdSize + 1;
 	if (remainSize <= 0) {
-		error("No command arg");
+		error(F("No command arg"));
 		return -1;
 	}
 	uint32_t commandArgSize = parseUntil(argPtr, remainSize, bufStr, sizeof(bufStr), ",");
 	if (commandArgSize != 4) {
-		error("Invalid command arg size");
+		error(F("Invalid command arg size"));
 		return -1;
 	}
 	if (bufStr[0] != '0' || bufStr[1] != 'x') {
-		error("Invalid command arg format");
+		error(F("Invalid command arg format"));
 		return -1;
 	}
 	*commandArg = (byte)strtoul(bufStr+2, NULL, 16);
@@ -246,19 +246,19 @@ int parseSetCmdArgs(char* args, const uint16_t argsSize, uint8_t* channel, uint8
 	int32_t remainSize = argsSize;
 	int channelSize = parseUntil(argPtr, remainSize, bufStr, sizeof(bufStr), ",");
 	if (channelSize <= 0) {
-		error("Invalid channel size");
+		error(F("Invalid channel size"));
 		return -1;
 	}
 	*channel = (uint8_t)strtoul(bufStr, NULL, 10);
 	argPtr += channelSize + 1;
 	remainSize -= channelSize + 1;
 	if (remainSize <= 0) {
-		error("No pa level");
+		error(F("No pa level"));
 		return -1;
 	}
 	int paLevelSize = parseUntil(argPtr, remainSize, bufStr, sizeof(bufStr), ",");
 	if (paLevelSize <= 0) {
-		error("Invalid pa level size");
+		error(F("Invalid pa level size"));
 		return -1;
 	}
 	*pa_level = (uint8_t)strtoul(bufStr, NULL, 10);
@@ -299,21 +299,21 @@ void loop()
 	if (receiveCmd(cmdBuf, sizeof(cmdBuf), &cmd, &cmdSize, &args, &argsSize) < 0) {
 		return;
 	}
-	debugLogln("Start exec");
+	debugLogln(F("Start exec"));
 
 	if (cmdCmp(cmd, cmdSize, "start")) {
 		int ret = setupRadioTransmitter(gChannel, gPaLevel);
 		if (ret != 0) {
-			error("Failed to setup transmitter");
+			error(F("Failed to setup transmitter"));
 			return;
 		}
-		output("started");
+		output(F("started"));
 	} else if (cmdCmp(cmd, cmdSize, "set")) {
 		uint8_t channel;
 		uint8_t pa_level;
 		int ret = parseSetCmdArgs(args, argsSize, &channel, &pa_level);
 		if (ret != 0) {
-			error("Invalid set command");
+			error(F("Invalid set command"));
 			return;
 		}
 		gChannel = channel;
@@ -322,7 +322,7 @@ void loop()
 		output(responseBuf);
 		ret = setupRadioTransmitter(gChannel, gPaLevel);
 		if (ret != 0) {
-			error("Failed to setup transmitter");
+			error(F("Failed to setup transmitter"));
 			return;
 		}
 	} else if (cmdCmp(cmd, cmdSize, "get")) {
@@ -334,27 +334,22 @@ void loop()
 		byte commandArg;
 		int ret = parseSendCmdArgs(args, argsSize, &remoteId, &commandId, &commandArg);
 		if (ret != 0) {
-			error("Invalid send command");
+			error(F("Invalid send command"));
 			return;
 		}
 		ret = sendCustomCommand(remoteId, commandId, commandArg);
 		if (ret != 0) {
-			error("Send failed");
+			error(F("Send failed"));
 			return;
 		}
 		// sendCustomCommand(0xBC4F10, 0x01, 0x01);
-		output("sent");
+		output(F("sent"));
 	} else if (cmdCmp(cmd, cmdSize, "print")) {
-		// char prettyDetails[256];
-		// if (prettyPrintDetails(prettyDetails, sizeof(prettyDetails)) != 0) {
-		// 	error("Failed to print details");
-		// 	return;
-		// }
-		// output(prettyDetails);
+		printRadioDetails();
 	} else if (cmdCmp(cmd, cmdSize, "scan")) {
 		int ret = setupRadioScanner(gChannel, gPaLevel);
 		if (ret != 0) {
-			error("Failed to setup scanner");
+			error(F("Failed to setup scanner"));
 			return;
 		}
 		unsigned long startMil = millis();
@@ -367,17 +362,17 @@ void loop()
 		}
 		ret = setupRadioTransmitter(gChannel, gPaLevel);
 		if (ret != 0) {
-			error("Failed to setup transmitter");
+			error(F("Failed to setup transmitter"));
 			return;
 		}
-		output("scan_done");
+		output(F("scan_done"));
 	} else if (cmdCmp(cmd, cmdSize, "ping")) {
-		output("pong");
+		output(F("pong"));
 	} else if (cmdCmp(cmd, cmdSize, "reset")) {
-		output("resetting");
+		output(F("resetting"));
 		resetFunc();
 	} else {
-		error("Unknown command");
+		error(F("Unknown command"));
 		errorSizedString(cmd, cmdSize);
 	}
 }

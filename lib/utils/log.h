@@ -1,7 +1,8 @@
 #pragma once
 
-#define DEBUG_LOG 1
 #include <HardwareSerial.h>
+
+#include "config.h"
 
 #if DEBUG_LOG
 #define debugLog(...) Serial.print(__VA_ARGS__)
@@ -13,38 +14,38 @@
 
 #define output(...) \
     do { \
-        Serial.print("out,"); \
+        Serial.print(F("out,")); \
         Serial.print(__VA_ARGS__); \
-        Serial.println(""); \
+        Serial.println(); \
     } while(0)
 
 #define outputSizedString(str, strSize) \
     do { \
-        Serial.print("out,"); \
+        Serial.print(F("out,")); \
         Serial.write(str, strSize); \
-        Serial.println(""); \
+        Serial.println(); \
     } while(0)
 
 #define error(...) \
     do { \
-        Serial.print("err,"); \
+        Serial.print(F("err,")); \
         Serial.print(__VA_ARGS__); \
-        Serial.print(" ("); \
-        Serial.print(__FILE__); \
-        Serial.print(":"); \
+        Serial.print(F(" (")); \
+        Serial.print(F(__FILE__)); \
+        Serial.print(F(":")); \
         Serial.print(__LINE__); \
-        Serial.print(")"); \
-        Serial.println(""); \
+        Serial.print(F(")")); \
+        Serial.println(); \
     } while(0)
 
 #define errorSizedString(str, strSize) \
     do { \
-        Serial.print("err,"); \
+        Serial.print(F("err,")); \
         Serial.write(str, strSize); \
-        Serial.print(" ("); \
-        Serial.print(__FILE__); \
-        Serial.print(":"); \
+        Serial.print(F(" (")); \
+        Serial.print(F(__FILE__)); \
+        Serial.print(F(":")); \
         Serial.print(__LINE__); \
-        Serial.print(")"); \
-        Serial.println(""); \
+        Serial.print(F(")")); \
+        Serial.println(); \
     } while(0)
