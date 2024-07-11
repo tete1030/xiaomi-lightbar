@@ -3,11 +3,14 @@
 #include <printf.h>
 #include <avr/wdt.h>
 
-uint8_t gChannel = 6;
-uint8_t gPaLevel = 1;
-
 #include "config.h"
 #include "log.h"
+#include "number.h"
+#include "token.h"
+#include "cmd.h"
+
+uint8_t gChannel = 6;
+uint8_t gPaLevel = 1;
 
 void setup()
 {
@@ -19,124 +22,28 @@ void setup()
 
 	gChannel = 6;
 	gPaLevel = 1;
+	initCmd();
 
 	// setupRadioScanner();
-	// setupRadioTransmitter(gChannel, gPaLevel);
+	setupRadioTransmitter(gChannel, gPaLevel);
 
-	wdt_enable(WDTO_8S);
+	wdt_enable(WDTO_4S);
 
 	Serial.println();
-	output(F("setup"));
+	output(F("reset"));
 }
 
 void (* resetFunc) (void) = 0;
 
-int readLine(char* buffer, uint32_t bufferSize)
-{
-	if (bufferSize == 0) {
-		error(F("Buffer size is 0"));
-		return -1;
-	}
-	uint32_t readCounter = 0;
-	char readByte;
-	
-	// start time
-	uint64_t startTime = 0;
-	while (true)
-	{
-		if (readCounter + 1 >= bufferSize) {
-			error(F("Buffer overflow"));
-			return -1;
-		}
-		while (Serial.available() == 0) {
-			wdt_reset();
-			#if MANUAL_MODE == 0
-			if (readCounter >= 1 && millis() - startTime > INPUT_TIMEOUT_MS) {
-				error(F("Line Timeout"));
-				return -1;
-			}
-			#endif
-		}
-		readByte = Serial.read();
-		if (startTime == 0) {
-			startTime = millis();
-		}
-
-		#if MANUAL_MODE == 1
-		Serial.print(readByte);
-		// if backspace
-		if (readByte == 0x08) {
-			Serial.print(F(" "));
-			Serial.print(readByte);
-		}
-		#endif
-
-		if (readByte == '\r') continue;
-		if (readByte == '\n') break;
-
-		if (readByte == 0x08) {
-			if (readCounter > 0) {
-				readCounter--;
-			}
-			continue;
-		}
-		buffer[readCounter++] = readByte;
-	}
-	buffer[readCounter] = '\0';
-	return readCounter;
-}
-
-int parseUntil(const char* source, int32_t sourceLen, char* target, uint16_t targetBufSize, const char* delimiters)
-{
-	if (sourceLen < 0) {
-		error(F("Invalid source length"));
-		return -1;
-	}
-	uint16_t index = 0;
-	char sourceChar;
-	uint16_t delLen = strlen(delimiters);
-	while (index < sourceLen)
-	{
-		sourceChar = source[index];
-		if (sourceChar == '\0') break;
-
-		bool foundDelimiter = false;
-		for (uint32_t i = 0; i < delLen; i++)
-		{
-			if (sourceChar == delimiters[i])
-			{
-				foundDelimiter = true;
-				break;
-			}
-		}
-		if (foundDelimiter) break;
-
-		if (target != NULL && index >= targetBufSize - 1) {
-			error(F("Buffer overflow"));
-			return -1;
-		}
-
-		if (target != NULL) {
-			target[index] = sourceChar;
-		}
-
-		index++;
-	}
-	if (target != NULL) {
-		if (index < targetBufSize) {
-			target[index] = '\0';
-		} else {
-			error(F("Buffer overflow"));
-			return -1;
-		}
-	}
-	return index;
-}
-
 // format: in,<cmd>,<arg1>,...,<argn>\n
 int receiveCmd(char* buffer, uint16_t bufferSize, char** outCmd, uint16_t* outCmdSize, char** outArgs, uint16_t* outArgsSize)
 {
+	#if MANUAL_MODE
+	int readSize = readLineWithHistory(buffer, bufferSize);
+	#else
 	int readSize = readLine(buffer, bufferSize);
+	#endif
+
 	if (readSize <= 0) {
 		return -1;
 	}
@@ -200,11 +107,17 @@ int parseSendCmdArgs(const char* args, const uint16_t argsSize, uint32_t* remote
 		error(F("Invalid remote id size"));
 		return -1;
 	}
-	if (bufStr[0] != '0' || bufStr[1] != 'x') {
+	uint32_t prasedUInt32;
+	if (parseHexStrToUInt32(bufStr, remoteIdSize, &prasedUInt32) != 0) {
 		error(F("Invalid remote id format"));
 		return -1;
 	}
-	*remoteId = strtoul(bufStr+2, NULL, 16);
+	if (checkUInt32BitSize(prasedUInt32, 24) != 0) {
+		error(F("Invalid remote id value"));
+		return -1;
+	}
+	*remoteId = prasedUInt32;
+
 	argPtr += remoteIdSize + 1;
 	remainSize -= remoteIdSize + 1;
 	if (remainSize <= 0) {
@@ -216,11 +129,16 @@ int parseSendCmdArgs(const char* args, const uint16_t argsSize, uint32_t* remote
 		error(F("Invalid command id size"));
 		return -1;
 	}
-	if (bufStr[0] != '0' || bufStr[1] != 'x') {
+	if (parseHexStrToUInt32(bufStr, commandIdSize, &prasedUInt32) != 0) {
 		error(F("Invalid command id format"));
 		return -1;
 	}
-	*commandId = (byte)strtoul(bufStr+2, NULL, 16);
+	if (checkUInt32BitSize(prasedUInt32, 8) != 0) {
+		error(F("Invalid command id value"));
+		return -1;
+	}
+	*commandId = (byte)prasedUInt32;
+
 	argPtr += commandIdSize + 1;
 	remainSize -= commandIdSize + 1;
 	if (remainSize <= 0) {
@@ -232,11 +150,15 @@ int parseSendCmdArgs(const char* args, const uint16_t argsSize, uint32_t* remote
 		error(F("Invalid command arg size"));
 		return -1;
 	}
-	if (bufStr[0] != '0' || bufStr[1] != 'x') {
+	if (parseHexStrToUInt32(bufStr, commandArgSize, &prasedUInt32) != 0) {
 		error(F("Invalid command arg format"));
 		return -1;
 	}
-	*commandArg = (byte)strtoul(bufStr+2, NULL, 16);
+	if (checkUInt32BitSize(prasedUInt32, 8) != 0) {
+		error(F("Invalid command arg value"));
+		return -1;
+	}
+	*commandArg = (byte)prasedUInt32;
 	return 0;
 }
 
@@ -249,7 +171,11 @@ int parseSetCmdArgs(char* args, const uint16_t argsSize, uint8_t* channel, uint8
 		error(F("Invalid channel size"));
 		return -1;
 	}
-	*channel = (uint8_t)strtoul(bufStr, NULL, 10);
+	if (parseDecimalStrToUInt8(bufStr, channelSize, channel) != 0) {
+		error(F("Invalid channel value"));
+		return -1;
+	}
+
 	argPtr += channelSize + 1;
 	remainSize -= channelSize + 1;
 	if (remainSize <= 0) {
@@ -261,7 +187,27 @@ int parseSetCmdArgs(char* args, const uint16_t argsSize, uint8_t* channel, uint8
 		error(F("Invalid pa level size"));
 		return -1;
 	}
-	*pa_level = (uint8_t)strtoul(bufStr, NULL, 10);
+	if (parseDecimalStrToUInt8(bufStr, paLevelSize, pa_level) != 0) {
+		error(F("Invalid pa level value"));
+		return -1;
+	}
+	
+	return 0;
+}
+
+int parseScanCmdArgs(char* args, const uint16_t argsSize, uint32_t* timeout)
+{
+	char* argPtr = args;
+	int32_t remainSize = argsSize;
+	int timeoutSize = parseUntil(argPtr, remainSize, bufStr, sizeof(bufStr), ",");
+	if (timeoutSize <= 0) {
+		error(F("Invalid timeout size"));
+		return -1;
+	}
+	if (parseDecimalStrToUInt32(bufStr, timeoutSize, timeout) != 0) {
+		error(F("Invalid timeout value"));
+		return -1;
+	}
 	return 0;
 }
 
@@ -292,19 +238,26 @@ void loop()
 	// updateRadioScanner();
 	wdt_reset();
 
+	// If millis() comes to near 0xFFFFFFFF, it will cause a bug
+	// We reset the board every 30 days to prevent this bug
+	if (millis() > 0x9A7EC800) {
+		resetFunc();
+	}
+
 	char* cmd;
 	uint16_t cmdSize;
 	char* args;
 	uint16_t argsSize;
 	if (receiveCmd(cmdBuf, sizeof(cmdBuf), &cmd, &cmdSize, &args, &argsSize) < 0) {
+		output(F("failed"));
 		return;
 	}
-	debugLogln(F("Start exec"));
 
 	if (cmdCmp(cmd, cmdSize, "start")) {
 		int ret = setupRadioTransmitter(gChannel, gPaLevel);
 		if (ret != 0) {
 			error(F("Failed to setup transmitter"));
+			output(F("failed"));
 			return;
 		}
 		output(F("started"));
@@ -314,6 +267,7 @@ void loop()
 		int ret = parseSetCmdArgs(args, argsSize, &channel, &pa_level);
 		if (ret != 0) {
 			error(F("Invalid set command"));
+			output(F("failed"));
 			return;
 		}
 		gChannel = channel;
@@ -323,6 +277,7 @@ void loop()
 		ret = setupRadioTransmitter(gChannel, gPaLevel);
 		if (ret != 0) {
 			error(F("Failed to setup transmitter"));
+			output(F("failed"));
 			return;
 		}
 	} else if (cmdCmp(cmd, cmdSize, "get")) {
@@ -335,11 +290,13 @@ void loop()
 		int ret = parseSendCmdArgs(args, argsSize, &remoteId, &commandId, &commandArg);
 		if (ret != 0) {
 			error(F("Invalid send command"));
+			output(F("failed"));
 			return;
 		}
 		ret = sendCustomCommand(remoteId, commandId, commandArg);
 		if (ret != 0) {
 			error(F("Send failed"));
+			output(F("failed"));
 			return;
 		}
 		// sendCustomCommand(0xBC4F10, 0x01, 0x01);
@@ -347,32 +304,46 @@ void loop()
 	} else if (cmdCmp(cmd, cmdSize, "print")) {
 		printRadioDetails();
 	} else if (cmdCmp(cmd, cmdSize, "scan")) {
+		uint32_t timeout = 5000;
+		if (argsSize > 0) {
+			int ret = parseScanCmdArgs(args, argsSize, &timeout);
+			if (ret != 0) {
+				error(F("Invalid scan command"));
+				output(F("failed"));
+				return;
+			}
+		}
 		int ret = setupRadioScanner(gChannel, gPaLevel);
 		if (ret != 0) {
 			error(F("Failed to setup scanner"));
+			output(F("failed"));
 			return;
 		}
 		unsigned long startMil = millis();
 		while (true) {
 			updateRadioScanner();
+			wdt_reset();
 			
-			if (millis() - startMil > 5000) {
+			if (millis() - startMil > timeout) {
 				break;
 			}
 		}
 		ret = setupRadioTransmitter(gChannel, gPaLevel);
 		if (ret != 0) {
 			error(F("Failed to setup transmitter"));
+			output(F("failed"));
 			return;
 		}
 		output(F("scan_done"));
 	} else if (cmdCmp(cmd, cmdSize, "ping")) {
 		output(F("pong"));
 	} else if (cmdCmp(cmd, cmdSize, "reset")) {
-		output(F("resetting"));
 		resetFunc();
+		// wdt_enable(WDTO_15MS);
+		// while (true) {}
 	} else {
 		error(F("Unknown command"));
 		errorSizedString(cmd, cmdSize);
+		output(F("failed"));
 	}
 }

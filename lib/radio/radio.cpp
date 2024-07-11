@@ -189,11 +189,11 @@ int updateRadioScanner()
 			uint8_t command_arg = 0;
 			for (unsigned long i = 0; i < 3; i++)
 			{
-				remote_id |= (uint32_t)data[4+i] << (8 * (3 - i));
+				remote_id |= ((uint32_t)data[4+i]) << (8 * (2 - i));
 			}
-			sequence = data[7];
-			command_id = data[8];
-			command_arg = data[9];
+			sequence = data[8];
+			command_id = data[9];
+			command_arg = data[10];
 
 			#if DEBUG_LOG
 			for (unsigned long i = 4; i < sizeof(data); i++)
@@ -251,8 +251,7 @@ int updateRadioScanner()
 			if (crc_result == (((uint16_t)data[11]) << 8 | (uint16_t)data[12])) {
 				debugLogln(F("CRC16 matches"));
 				char outputResult[100];
-				// sprintf(outputResult, "Remote ID: 0x%08X, Sequence: 0x%02X, Command ID: 0x%02X, Command Arg: 0x%02X", remote_id, sequence, command_id, command_arg);
-				sprintf_P(outputResult, PSTR("remote_id=0x%08X,sequence=0x%02X,command_id=0x%02X,command_arg=0x%02X"), (unsigned int)remote_id, sequence, command_id, command_arg);
+				sprintf_P(outputResult, PSTR("remote_id=0x%02X%04X,sequence=0x%02X,command_id=0x%02X,command_arg=0x%02X"), (uint16_t)(remote_id >> 16), (uint16_t)(remote_id & 0xFFFF), sequence, command_id, command_arg);
 
 				output(outputResult);
 			} else {
